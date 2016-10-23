@@ -230,7 +230,10 @@ void CCS580HWView::OnRotate()
 		}
 
 		// Accumulate matrix
-		GzPushMatrix(m_pApplication->m_pRender, rotMat); 
+		for (int i = 0; i < AAKERNEL_SIZE; ++i)
+		{
+			GzPushMatrix(m_pApplication->m_pRender[i], rotMat);
+		}
 	}
 }
 
@@ -267,7 +270,10 @@ void CCS580HWView::OnTranslate()
 		GzTrxMat(input->translation, trxMat);
 
 		// Accumulate matrix
-		GzPushMatrix(m_pApplication->m_pRender, trxMat); 
+		for (int i = 0; i < AAKERNEL_SIZE; ++i)
+		{
+			GzPushMatrix(m_pApplication->m_pRender[i], trxMat);
+		}
 	}
 }
 
@@ -304,6 +310,9 @@ void CCS580HWView::OnScale()
 		GzScaleMat(input->scale, scaleMat);
 
 		// Accumulate matrix
-		GzPushMatrix(m_pApplication->m_pRender, scaleMat); 
+		for (int i = 0; i < AAKERNEL_SIZE; ++i)
+		{
+			GzPushMatrix(m_pApplication->m_pRender[i], scaleMat);
+		}
 	}
 }

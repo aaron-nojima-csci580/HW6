@@ -18,8 +18,11 @@ static char THIS_FILE[]=__FILE__;
 
 Application::Application()
 {
-	m_pDisplay = NULL;		// the display
-	m_pRender = NULL;		// the renderer
+	for (int i = 0; i < AAKERNEL_SIZE; ++i)
+	{
+		m_pDisplay[i] = NULL;		// the display
+		m_pRender[i] = NULL;		// the renderer
+	}
 	m_pUserInput = NULL;
 	m_pFrameBuffer = NULL;
 }

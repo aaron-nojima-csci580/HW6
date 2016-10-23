@@ -14,6 +14,8 @@
 #define	MATLEVELS	100		/* how many matrix pushes allowed */
 #define	MAX_LIGHTS	10		/* how many lights allowed */
 
+#define	AAKERNEL_SIZE	6
+
 #ifndef GZRENDER
 #define GZRENDER
 typedef struct {			/* define a renderer */
@@ -31,6 +33,8 @@ typedef struct {			/* define a renderer */
   GzColor		Ka, Kd, Ks;
   float		    spec;		/* specular power */
   GzTexture		tex_fun;    /* tex_fun(float u, float v, GzColor color) */
+  float			offsetX;
+  float			offsetY;
 }  GzRender;
 #endif
 

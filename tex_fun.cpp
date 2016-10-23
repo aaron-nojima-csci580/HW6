@@ -91,7 +91,6 @@ int ptex_fun(float u, float v, GzColor color)
 	u = fmaxf(0, fminf(1, u));
 	v = fmaxf(0, fminf(1, v));
 
-	// TODO: IMPLEMENT (Be Creative!)
 	GzColor black = { 0.0f, 0.0f, 0.0f };
 	GzColor red = { 1.0f, 0.0f, 0.0f };
 

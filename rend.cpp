@@ -200,6 +200,9 @@ int GzNewRender(GzRender **render, GzDisplay	*display)
 		(*render)->Ks[BLUE] = ks[BLUE];
 		(*render)->spec = DEFAULT_SPEC;
 
+		(*render)->offsetX = 0;
+		(*render)->offsetY = 0;
+
 		return GZ_SUCCESS;
 	}
 	return GZ_FAILURE;
@@ -554,7 +557,13 @@ int GzPutAttribute(GzRender	*render, int numAttributes, GzToken	*nameList,
 					break;
 				case GZ_TEXTURE_MAP:
 					render->tex_fun = (GzTexture)valueList[i];
-				// later set texture maps
+					break;
+				case GZ_AASHIFTX:
+					render->offsetX = *(float *)valueList[i];
+					break;
+				case GZ_AASHIFTY:
+					render->offsetY = *(float *)valueList[i];
+					break;
 			}
 		}
 		return GZ_SUCCESS;
@@ -636,7 +645,6 @@ int GzPutTriangle(GzRender	*render, int numParts, GzToken *nameList, GzPointer	*
 
 
 				// Clip - just discard any triangle with any vert(s) behind view plane
-				// TODO: optional test for triangles with all three verts off-screen (trivial frustum cull)
 				for (int t = 0; t < VERTICES_PER_TRIANGLE; ++t)
 				{
 					if (triangleVertices[t][Z] < 0)
@@ -645,18 +653,31 @@ int GzPutTriangle(GzRender	*render, int numParts, GzToken *nameList, GzPointer	*
 					}
 				}
 
+				// Optional test for triangles with all three verts off-screen (trivial frustum cull)
+				if ((triangleVertices[0][X] < 0 || triangleVertices[0][X] > (render->display->xres)) &&
+					(triangleVertices[1][X] < 0 || triangleVertices[1][X] > (render->display->xres)) &&
+					(triangleVertices[2][X] < 0 || triangleVertices[2][X] > (render->display->xres)))
+				{
+					return GZ_FAILURE;
+				}
+				if ((triangleVertices[0][Y] < 0 || triangleVertices[0][Y] > (render->display->yres)) &&
+					(triangleVertices[1][Y] < 0 || triangleVertices[1][Y] > (render->display->yres)) &&
+					(triangleVertices[2][Y] < 0 || triangleVertices[2][Y] > (render->display->yres)))
+				{
+					return GZ_FAILURE;
+				}
+
 				// invoke triangle rasterizer (HW2)
 
 				// Get indices of vertices corresponding to increasing Y
 				sortTriangleVertices(yValues, &indices);
-				int i0 = indices[0];
-				int i1 = indices[1];
-				int i2 = indices[2];
 
-				// Get vertices in increasing Y
-				memcpy(Vertices[0], triangleVertices[i0], sizeof(float) * 3);
-				memcpy(Vertices[1], triangleVertices[i1], sizeof(float) * 3);
-				memcpy(Vertices[2], triangleVertices[i2], sizeof(float) * 3);
+				// HW6 Antialiasing - Offset for filter
+				for (int t = 0; t < VERTICES_PER_TRIANGLE; ++t)
+				{
+					triangleVertices[t][X] += render->offsetX;
+					triangleVertices[t][Y] += render->offsetY;
+				}
 
 			}
 			else if (nameList[i] == GZ_NORMAL)
@@ -692,16 +713,6 @@ int GzPutTriangle(GzRender	*render, int numParts, GzToken *nameList, GzPointer	*
 					triangleNormals[t][Y] = yResult / length;
 					triangleNormals[t][Z] = zResult / length;
 				}
-
-				// Get indices of vertices corresponding to increasing Y
-				int i0 = indices[0];
-				int i1 = indices[1];
-				int i2 = indices[2];
-
-				// Get normals in increasing vertex-Y
-				memcpy(Normals[0], triangleNormals[i0], sizeof(GzCoord));
-				memcpy(Normals[1], triangleNormals[i1], sizeof(GzCoord));
-				memcpy(Normals[2], triangleNormals[i2], sizeof(GzCoord));
 			}
 			else if (nameList[i] == GZ_TEXTURE_INDEX)
 			{
@@ -715,18 +726,10 @@ int GzPutTriangle(GzRender	*render, int numParts, GzToken *nameList, GzPointer	*
 					triangleTextureIndices[t][U] /= ((triangleVertices[t][Z] / (MAXINT - triangleVertices[t][Z])) + 1);
 					triangleTextureIndices[t][V] /= ((triangleVertices[t][Z] / (MAXINT - triangleVertices[t][Z])) + 1);
 				}
-
-				// Get indices of texture indices corresponding to increasing Y
-				int i0 = indices[0];
-				int i1 = indices[1];
-				int i2 = indices[2];
-
-				// Get texture indices in increasing vertex-Y
-				memcpy(TextureIndices[0], triangleTextureIndices[i0], sizeof(GzTextureIndex));
-				memcpy(TextureIndices[1], triangleTextureIndices[i1], sizeof(GzTextureIndex));
-				memcpy(TextureIndices[2], triangleTextureIndices[i2], sizeof(GzTextureIndex));
 			}
 		}
+
+		
 
 		// Do actual rendering of triangle //
 
@@ -735,38 +738,32 @@ int GzPutTriangle(GzRender	*render, int numParts, GzToken *nameList, GzPointer	*
 		// note: E_i starts with V_i at its tail
 		int edgeTypes[] = { UNDEFINED_EDGE, UNDEFINED_EDGE, UNDEFINED_EDGE };
 
+		// Vertex indices in y-sorted order
+		int i0 = indices[0];
+		int i1 = indices[1];
+		int i2 = indices[2];
+
 		// Check for Horizontal edges first
-		if (Vertices[0][Y] == Vertices[1][Y] && Vertices[1][Y] == Vertices[2][Y])
+		if (triangleVertices[i0][Y] == triangleVertices[i1][Y] && triangleVertices[i1][Y] == triangleVertices[i2][Y])
 		{
 			// All points have same Y value (horizontal lines)
 			// TODO: what???
 			// Assuming we won't have to deal with this for now?
 			return GZ_SUCCESS;
 		}
-		else if (Vertices[0][Y] == Vertices[1][Y])
+		else if (triangleVertices[i0][Y] == triangleVertices[i1][Y])
 		{
 			// Top Edge
-			if (Vertices[0][X] < Vertices[1][X])
+			if (triangleVertices[i0][X] < triangleVertices[i1][X])
 			{
 				// Leave alone
 			}
-			else if (Vertices[0][X] > Vertices[1][X])
+			else if (triangleVertices[i0][X] > triangleVertices[i1][X])
 			{
 				// Swap V0 and V1
-				GzCoord temp;
-				memcpy(temp, Vertices[0], sizeof(GzCoord));
-				memcpy(Vertices[0], Vertices[1], sizeof(GzCoord));
-				memcpy(Vertices[1], temp, sizeof(GzCoord));
-
-				// Swap N0 and N1
-				memcpy(temp, Normals[0], sizeof(GzCoord));
-				memcpy(Normals[0], Normals[1], sizeof(GzCoord));
-				memcpy(Normals[1], temp, sizeof(GzCoord));
-
-				// Swap T0 and T1
-				memcpy(temp, TextureIndices[0], sizeof(GzTextureIndex));
-				memcpy(TextureIndices[0], TextureIndices[1], sizeof(GzTextureIndex));
-				memcpy(TextureIndices[1], temp, sizeof(GzTextureIndex));
+				int temp = indices[0];
+				indices[0] = indices[1];
+				indices[1] = temp;
 			}
 			else
 			{
@@ -782,28 +779,17 @@ int GzPutTriangle(GzRender	*render, int numParts, GzToken *nameList, GzPointer	*
 			edgeTypes[1] = RIGHT_EDGE;
 			edgeTypes[2] = LEFT_EDGE;
 		}
-		else if (Vertices[1][Y] == Vertices[2][Y])
+		else if (triangleVertices[i1][Y] == triangleVertices[i2][Y])
 		{
 			// Bottom Edge
-			if (Vertices[1][X] < Vertices[2][X])
+			if (triangleVertices[i1][X] < triangleVertices[i2][X])
 			{
 				// Swap V1 and V2
-				GzCoord temp;
-				memcpy(temp, Vertices[1], sizeof(GzCoord));
-				memcpy(Vertices[1], Vertices[2], sizeof(GzCoord));
-				memcpy(Vertices[2], temp, sizeof(GzCoord));
-
-				// Swap N1 and N2
-				memcpy(temp, Normals[1], sizeof(GzCoord));
-				memcpy(Normals[1], Normals[2], sizeof(GzCoord));
-				memcpy(Normals[2], temp, sizeof(GzCoord));
-
-				// Swap T1 and T2
-				memcpy(temp, TextureIndices[1], sizeof(GzTextureIndex));
-				memcpy(TextureIndices[1], TextureIndices[2], sizeof(GzTextureIndex));
-				memcpy(TextureIndices[2], temp, sizeof(GzTextureIndex));
+				int temp = indices[1];
+				indices[1] = indices[2];
+				indices[2] = temp;
 			}
-			else if (Vertices[1][X] > Vertices[2][X])
+			else if (triangleVertices[i1][X] > triangleVertices[i2][X])
 			{
 				// Leave alone
 			}
@@ -824,34 +810,23 @@ int GzPutTriangle(GzRender	*render, int numParts, GzToken *nameList, GzPointer	*
 		else
 		{
 			// Non-Horizontal Edges
-			float dY = Vertices[2][Y] - Vertices[0][Y];
-			float dX = Vertices[2][X] - Vertices[0][X];
-			float oppositeEdgeX = Vertices[0][X] + (dX / dY) * (Vertices[1][Y] - Vertices[0][Y]);
-			if (oppositeEdgeX < Vertices[1][X])
+			float dY = triangleVertices[i2][Y] - triangleVertices[i0][Y];
+			float dX = triangleVertices[i2][X] - triangleVertices[i0][X];
+			float oppositeEdgeX = triangleVertices[i0][X] + (dX / dY) * (triangleVertices[i1][Y] - triangleVertices[i0][Y]);
+			if (oppositeEdgeX < triangleVertices[i1][X])
 			{
 				// V1 is R-edge
 				// Don't need to do anything (leave order of vertices)
 				// E1 is a right edge
 				edgeTypes[1] = RIGHT_EDGE;
 			}
-			else if (oppositeEdgeX > Vertices[1][X])
+			else if (oppositeEdgeX > triangleVertices[i1][X])
 			{
 				// V1 is L-edge
 				// Want to switch V1 and V2
-				GzCoord temp;
-				memcpy(temp, Vertices[1], sizeof(GzCoord));
-				memcpy(Vertices[1], Vertices[2], sizeof(GzCoord));
-				memcpy(Vertices[2], temp, sizeof(GzCoord));
-
-				// Want to switch N1 and N2
-				memcpy(temp, Normals[1], sizeof(GzCoord));
-				memcpy(Normals[1], Normals[2], sizeof(GzCoord));
-				memcpy(Normals[2], temp, sizeof(GzCoord));
-
-				// Want to switch T1 and T2
-				memcpy(temp, TextureIndices[1], sizeof(GzTextureIndex));
-				memcpy(TextureIndices[1], TextureIndices[2], sizeof(GzTextureIndex));
-				memcpy(TextureIndices[2], temp, sizeof(GzTextureIndex));
+				int temp = indices[1];
+				indices[1] = indices[2];
+				indices[2] = temp;
 
 				// E1 is a left edge
 				edgeTypes[1] = LEFT_EDGE;
@@ -869,6 +844,21 @@ int GzPutTriangle(GzRender	*render, int numParts, GzToken *nameList, GzPointer	*
 			edgeTypes[0] = RIGHT_EDGE;
 			edgeTypes[2] = LEFT_EDGE;
 		}
+
+		// Get vertices in designated order
+		memcpy(Vertices[0], triangleVertices[indices[0]], sizeof(GzCoord));
+		memcpy(Vertices[1], triangleVertices[indices[1]], sizeof(GzCoord));
+		memcpy(Vertices[2], triangleVertices[indices[2]], sizeof(GzCoord));
+
+		// Get normals in designated order
+		memcpy(Normals[0], triangleNormals[indices[0]], sizeof(GzCoord));
+		memcpy(Normals[1], triangleNormals[indices[1]], sizeof(GzCoord));
+		memcpy(Normals[2], triangleNormals[indices[2]], sizeof(GzCoord));
+
+		// Get texture indices in designated order
+		memcpy(TextureIndices[0], triangleTextureIndices[indices[0]], sizeof(GzTextureIndex));
+		memcpy(TextureIndices[1], triangleTextureIndices[indices[1]], sizeof(GzTextureIndex));
+		memcpy(TextureIndices[2], triangleTextureIndices[indices[2]], sizeof(GzTextureIndex));
 
 		// Compute projection for vertices, compute the E_i
 		float A[3], B[3], C[3];
